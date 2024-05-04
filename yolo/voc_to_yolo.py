@@ -1,119 +1,46 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+import xml.etree.ElementTree as ET
 import os
-import cv2
-from xml.dom.minidom import parseString
-from lxml.etree import Element, SubElement, tostring
-import numpy as np
-from os.path import join
 
-## coco classes
-YOLO_CLASSES = ('helmet','head','person')
+def convert_voc_to_yolo(voc_dir, yolo_dir, classes):
+    if not os.path.exists(yolo_dir):
+        os.makedirs(yolo_dir)
 
-## converts the normalized positions  into integer positions
-def unconvert(class_id, width, height, x, y, w, h):
+    for xml_file in os.listdir(voc_dir):
+        if xml_file.endswith('.xml'):
+            tree = ET.parse(os.path.join(voc_dir, xml_file))
+            root = tree.getroot()
 
-    xmax = int((x*width) + (w * width)/2.0)
-    xmin = int((x*width) - (w * width)/2.0)
-    ymax = int((y*height) + (h * height)/2.0)
-    ymin = int((y*height) - (h * height)/2.0)
-    class_id = int(class_id)
-    return (class_id, xmin, xmax, ymin, ymax)
+            txt_filename = os.path.splitext(xml_file)[0] + '.txt'
+            with open(os.path.join(yolo_dir, txt_filename), 'w') as txt_file:
+                for member in root.findall('object'):
+                    cls = member.find('name').text
+                    if cls not in classes:
+                        continue
+                    cls_id = classes.index(cls)
 
+                    bndbox = member.find('bndbox')
+                    xmin = float(bndbox.find('xmin').text)
+                    xmax = float(bndbox.find('xmax').text)
+                    ymin = float(bndbox.find('ymin').text)
+                    ymax = float(bndbox.find('ymax').text)
 
-## path root folder
-ROOT = ''
+                    x_center = (xmin + xmax) / 2.0
+                    y_center = (ymin + ymax) / 2.0
+                    width = xmax - xmin
+                    height = ymax - ymin
 
+                    img_width = int(root.find('.//size/width').text)
+                    img_height = int(root.find('.//size/height').text)
 
-## converts coco into xml 
-def xml_transform(root, classes):  
-    class_path  = join(root, 'labels')
-    ids = list()
-    l=os.listdir(class_path)
-    
-    check = '.DS_Store' in l
-    if check == True:
-        l.remove('.DS_Store')
-        
-    ids=[x.split('.')[0] for x in l]   
+                    x_center /= img_width
+                    y_center /= img_height
+                    width /= img_width
+                    height /= img_height
 
-    annopath = join(root, 'labels', '%s.txt')
-    imgpath = join(root, 'images', '%s.jpg')
-    
-    os.makedirs(join(root, 'outputs'), exist_ok=True)
-    outpath = join(root, 'outputs', '%s.xml')
+                    txt_file.write(f'{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n')
 
-    for i in range(len(ids)):
-        img_id = ids[i] 
-        if img_id == "classes":
-            continue
-        if os.path.exists(outpath % img_id):
-            continue
-        print(imgpath % img_id)
-        img= cv2.imread(imgpath % img_id)
-        height, width, channels = img.shape # pega tamanhos e canais das images
+# 類別列表，例如 ['person', 'car', ...]
+classes_list = ['helmet','head','person']
 
-        node_root = Element('annotation')
-        node_folder = SubElement(node_root, 'folder')
-        node_folder.text = 'VOC2007'
-        img_name = img_id + '.jpg'
-    
-        node_filename = SubElement(node_root, 'filename')
-        node_filename.text = img_name
-        
-        node_source= SubElement(node_root, 'source')
-        node_database = SubElement(node_source, 'database')
-        node_database.text = 'Coco database'
-        
-        node_size = SubElement(node_root, 'size')
-        node_width = SubElement(node_size, 'width')
-        node_width.text = str(width)
-    
-        node_height = SubElement(node_size, 'height')
-        node_height.text = str(height)
-
-        node_depth = SubElement(node_size, 'depth')
-        node_depth.text = str(channels)
-
-        node_segmented = SubElement(node_root, 'segmented')
-        node_segmented.text = '0'
-
-        target = (annopath % img_id)
-        if os.path.exists(target):
-            label_norm= np.loadtxt(target).reshape(-1, 5)
-
-            for i in range(len(label_norm)):
-                labels_conv = label_norm[i]
-                new_label = unconvert(labels_conv[0], width, height, labels_conv[1], labels_conv[2], labels_conv[3], labels_conv[4])
-                node_object = SubElement(node_root, 'object')
-                node_name = SubElement(node_object, 'name')
-                node_name.text = classes[new_label[0]]
-                
-                node_pose = SubElement(node_object, 'pose')
-                node_pose.text = 'Unspecified'
-                
-                
-                node_truncated = SubElement(node_object, 'truncated')
-                node_truncated.text = '0'
-                node_difficult = SubElement(node_object, 'difficult')
-                node_difficult.text = '0'
-                node_bndbox = SubElement(node_object, 'bndbox')
-                node_xmin = SubElement(node_bndbox, 'xmin')
-                node_xmin.text = str(new_label[1])
-                node_ymin = SubElement(node_bndbox, 'ymin')
-                node_ymin.text = str(new_label[3])
-                node_xmax = SubElement(node_bndbox, 'xmax')
-                node_xmax.text =  str(new_label[2])
-                node_ymax = SubElement(node_bndbox, 'ymax')
-                node_ymax.text = str(new_label[4])
-                xml = tostring(node_root, pretty_print=True)  
-                dom = parseString(xml)
-        print(xml)  
-        f =  open(outpath % img_id, "wb")
-        #f = open(os.path.join(outpath, img_id), "w")
-        #os.remove(target)
-        f.write(xml)
-        f.close()     
-       
-
-xml_transform(ROOT, YOLO_CLASSES)
+# 將 'voc_dir' 設為的 VOC 檔案目錄，'yolo_dir' 設為存放轉換後檔案的目錄
+convert_voc_to_yolo('/Users/horden/Desktop/archive/labels', '/Users/horden/Desktop/archive/yolo_outputs', classes_list)
