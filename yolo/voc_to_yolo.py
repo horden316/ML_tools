@@ -43,4 +43,4 @@ def convert_voc_to_yolo(voc_dir, yolo_dir, classes):
 classes_list = ['helmet','head','person']
 
 # 將 'voc_dir' 設為的 VOC 檔案目錄，'yolo_dir' 設為存放轉換後檔案的目錄
-convert_voc_to_yolo('/Users/horden/Desktop/archive/labels', '/Users/horden/Desktop/archive/yolo_outputs', classes_list)
+convert_voc_to_yolo('', '', classes_list)
